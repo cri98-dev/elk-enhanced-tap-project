@@ -1,0 +1,5 @@
+pandas
+flickrapi
+requests
+pyspark
+elasticsearch==7.13.3

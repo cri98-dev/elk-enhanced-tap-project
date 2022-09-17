@@ -21,6 +21,8 @@ elastic_index = "tap_project"
 api_key = os.getenv('API_KEY')
 api_secret = os.getenv('API_SECRET')
 size = os.getenv('IMAGES_SIZE')
+recently_processed_ids = []
+cache_len = 30
 
 
 def getToken(api_key, api_secret, response_format="parsed-json"):
@@ -59,11 +61,11 @@ def checkDownloadableAndGetDescr(df: pd.DataFrame):
 
 
 
-def askToDownloadAndClassifyImages(df: pd.DataFrame):
+def classifyAllImages(df: pd.DataFrame):
     pred_classes, confidence_scores = [], []
     
     for i, row in df.iterrows():
-      pred, conf = call_remote_service(row['url'])
+      pred, conf = call_remote_classifier(row['url'])
       pred_classes.append(pred)
       confidence_scores.append(conf)
 
@@ -73,15 +75,22 @@ def askToDownloadAndClassifyImages(df: pd.DataFrame):
 
 
 
-def call_remote_service(url):
+def call_remote_classifier(image_url):
   global classifier_url
-  body = {'url': url}
+  body = {'url': image_url}
   headers = {'content-type': 'application/json'}
-  try:
-    res = requests.post(classifier_url, data=json.dumps(body), headers=headers).json()
-    return res['class'], res['conf']
-  except:
-    return 'N/A', 0
+  #max_attempts = 5
+  #attempts = 0
+  while True:
+    try:
+      #attempts += 1
+      res = requests.post(classifier_url, data=json.dumps(body), headers=headers).json()
+      return res['class'], res['conf']
+    except Exception as e:
+      print('Unable to contact classification endpoint. Retrying...')
+      time.sleep(2);
+      #if attempts >= max_attempts:
+      #  return 'N/A', 0
 
 
 
@@ -126,8 +135,10 @@ def create_es_index():
   while True:
     try:
       es = Elasticsearch(hosts=elastic_host)
+      print('Connection to Elasticsearch established.')
       break
     except:
+      print('Unable to connect to Elasticsearch. Retrying...')
       time.sleep(2)
 
   while True:
@@ -136,9 +147,11 @@ def create_es_index():
       if 'acknowledged' in response and response['acknowledged'] == True:
         print('Index created successfully.')
         break
-      else:
-        raise Exception
-    except:
+      elif response['status'] == 400:
+        print('Index already exists.')
+        break;
+    except Exception as e:
+      print(f'Index NOT created: {e}. Retrying...')
       time.sleep(2)
 
 
@@ -154,13 +167,15 @@ def check_existing(id):
 # ogni "row" è un oggetto json che contiene il numero di immagini retrieved da una sola call all'api rest di flickr
 def extract_info(row: DataFrame):
   global size
+  global recently_processed_ids
+  global cache_len
   photos = json.loads(row['raw_data'])['photos']['photo']
 
   photos_info = {'photo_id':[], 'owner_id':[], 'title':[], 'public': [], 'url':[],\
                 'width':[], 'height':[]}
 
   for photo in photos:
-    if bool(photo['ispublic']) and f'url_{size}' in photo:
+    if photo['id'] not in recently_processed_ids and bool(photo['ispublic']) and f'url_{size}' in photo:
       photos_info['photo_id'].append(photo['id'])
       photos_info['owner_id'].append(photo['owner'])
       photos_info['title'].append(photo['title'])
@@ -169,37 +184,41 @@ def extract_info(row: DataFrame):
       photos_info['width'].append(photo[f'width_{size}'])
       photos_info['height'].append(photo[f'height_{size}'])
 
+    recently_processed_ids.append(photo['id'])
+
   photos_info['ingestion_timestamp'] = [row['timestamp']]*len(photos_info['photo_id'])
+
+  recently_processed_ids = recently_processed_ids[-cache_len:]
 
   return pd.DataFrame(photos_info)
 
 
 
 def all(row: DataFrame):
-  new_df = extract_info(row)
+  new_df = extract_info(row) # è un pd.Dataframe
 
   new_df['photo_id'] = new_df['photo_id'].astype('int64')
 
   connect_to_ES()
 
-  for i, id in new_df['photo_id'].items():
-    already_exists = check_existing(id)
-    if already_exists:
-      new_df = new_df.drop(i)
+  #for i, id in new_df['photo_id'].items():
+  #  already_exists = check_existing(id)
+  #  if already_exists:
+  #    new_df = new_df.drop(i)
 
   new_df['downloadable'], new_df['description'] = checkDownloadableAndGetDescr(new_df)
 
   new_df = new_df[new_df['downloadable']]
 
-  if new_df.size > 0:
-    new_df['class'], new_df['confidence'] = askToDownloadAndClassifyImages(new_df)
-    new_df = new_df[new_df['class'] != 'N/A']
+  #if new_df.size > 0:
+  new_df['class'], new_df['confidence'] = classifyAllImages(new_df)
+  new_df = new_df[new_df['class'] != 'N/A']
 
   return new_df
   
 
 def merge_dfs(df1: pd.DataFrame, df2: pd.DataFrame):
-  return df1.append(df2, ignore_index=True)
+  return pd.concat([df1, df2], ignore_index=True)
 
 
 
@@ -218,7 +237,6 @@ def elaborate_and_save_to_es(df: DataFrame, epoch_id):
       global elastic_index
 
       out_df.write \
-        .option("checkpointLocation", "/tmp/checkpoints")\
         .format("org.elasticsearch.spark.sql") \
         .option("es.mapping.id", "photo_id") \
         .mode('append') \
@@ -251,6 +269,7 @@ df = spark \
 #  .selectExpr("raw_data", "to_timestamp(timestamp, 'yyyy-MM-dd HH:mm:ss.SSS') as timestamp")\
 df.selectExpr("CAST(value AS STRING) as raw_data", "timestamp")\
   .writeStream\
+  .option("checkpointLocation", "/var/tmp/checkpoints")\
   .foreachBatch(elaborate_and_save_to_es)\
   .start()\
   .awaitTermination()

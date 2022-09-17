@@ -41,6 +41,7 @@ def getDataset(class_to_get, max_no, min_conf):
         res = es.search(index=elastic_index, body=body)
     except (ConnectionError, NotFoundError) as e:
         logging.error(f'Exception thrown: {e}')
+        return Response("Error retrieving urls. Try Again Later", status=500)
     else:
         for d in res['hits']['hits']:
             out['urls'].append(d['_source']['url']) 
@@ -55,12 +56,13 @@ def get_dataset():
 
     try:
         class_to_get = request.args.get('class', type=int)
-        if class_to_get is None:
-            return Response("The mandatory parameter 'class' is missing. Check the /getClasses endpoint to get class ids.", status=400)
+        if class_to_get is None or class_to_get < 0 or class_to_get > len(classes):
+            return Response("The mandatory parameter 'class' is missing or has a wrong value. Check the /getClasses endpoint to get the full list of valid class ids.", status=400)
         max_no = request.args.get('max', default=20, type=int)
         min_conf = request.args.get('min_conf', default=0.6, type=float)
     except (ValueError, TypeError) as e:
         logging.error(f'Exception thrown: {e}')
+        return Response("Wrong request parameters value. Check them and retry.", status=400)
         #print('Inside exception, error is:', e)
     else:
         out = getDataset(class_to_get, max_no, min_conf)

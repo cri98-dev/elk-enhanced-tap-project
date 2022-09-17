@@ -199,7 +199,7 @@ def all(row: DataFrame):
 
   new_df['photo_id'] = new_df['photo_id'].astype('int64')
 
-  connect_to_ES()
+  #connect_to_ES()
 
   #for i, id in new_df['photo_id'].items():
   #  already_exists = check_existing(id)
@@ -236,11 +236,18 @@ def elaborate_and_save_to_es(df: DataFrame, epoch_id):
       global elastic_host
       global elastic_index
 
-      out_df.write \
-        .format("org.elasticsearch.spark.sql") \
-        .option("es.mapping.id", "photo_id") \
-        .mode('append') \
-        .save(elastic_index)
+    while True:
+      try:
+        out_df.write \
+          .format("org.elasticsearch.spark.sql") \
+          .option("es.mapping.id", "photo_id") \
+          .mode('append') \
+          .save(elastic_index)
+        break
+      except Exception as e:
+        print(f'Unable to save out_df to Elasticsearch: {e}. Retrying...')
+        time.sleep(2)
+
 
 
 flickr = getToken(api_key, api_secret)

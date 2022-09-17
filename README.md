@@ -1,6 +1,6 @@
 # Real-time Image Classifier, Trends Analyzer, and Dataset Creator
 
-This is the project realized for the exam of the subject 'Technologies for Advanced Programming' (University of Catania, Computer Science Department).
+This is the project realized for the exam of the subject 'Technologies for Advanced Programming' (University of Catania, Department of Computer Science).
 
 # Architecture
 

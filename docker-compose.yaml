@@ -1,4 +1,4 @@
-version: "3.9"
+version: "3.3"
 
 services: 
     elasticsearch:
@@ -69,6 +69,7 @@ services:
             context: kafkaServer
             args:
                 ZOOKEEPER_HOST: "zookeeper:2181"
+                KAFKASERVER_HOST: "kafkaServer:9092"
         image: kafka_server
         container_name: kafkaServer
         ports: 

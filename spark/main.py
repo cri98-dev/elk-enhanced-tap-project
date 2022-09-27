@@ -269,6 +269,7 @@ df = spark \
   .readStream \
   .format("kafka") \
   .option("kafka.bootstrap.servers", kafka_server) \
+  .option("maxOffsetsPerTrigger", 3) \
   .option("subscribe", kafka_topic) \
   .load()
 

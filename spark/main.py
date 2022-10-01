@@ -88,7 +88,7 @@ def call_remote_classifier(image_url):
       return res['class'], res['conf']
     except Exception as e:
       print('Unable to contact classification endpoint. Retrying...')
-      time.sleep(2);
+      time.sleep(2)
       #if attempts >= max_attempts:
       #  return 'N/A', 0
 

@@ -7,7 +7,6 @@ import flickrapi
 from pyspark.sql import SparkSession
 import json
 from elasticsearch import Elasticsearch
-import socket
 import os
 warnings.filterwarnings("ignore")
 
@@ -21,30 +20,11 @@ elastic_index = "tap_project"
 api_key = os.getenv('API_KEY')
 api_secret = os.getenv('API_SECRET')
 size = os.getenv('IMAGES_SIZE')
-recently_processed_ids = []
-cache_len = 30
 
 
 def getToken(api_key, api_secret, response_format="parsed-json"):
     flickr = flickrapi.FlickrAPI(api_key, api_secret, format=response_format)
     return flickr
-    """
-    if not flickr.token_valid(perms='read'):
-        flickr.get_request_token(oauth_callback='oob')
-        authorize_url = flickr.auth_url(perms='read')
-
-        print('\n================= USE THIS URL TO GIVE AUTHORIZATION =================\n')
-        print(authorize_url)
-        print('\n================= TO SEND CODE ATTACH A SHELL AND USE \'nc -u 0 2222\' COMMAND =================\n')
-        
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.bind(('0.0.0.0', 2222))
-        data, addr = sock.recvfrom(24)
-        verifier = data.decode('utf-8').strip()
-        
-        flickr.get_access_token(verifier)
-    return flickr
-    """
 
 def checkDownloadableAndGetDescr(df: pd.DataFrame):
     global flickr
@@ -95,21 +75,6 @@ def call_remote_classifier(image_url):
 
 
 
-def connect_to_ES():
-  global elastic_host
-  global es
-  
-  while True:
-    try:
-      es = Elasticsearch(hosts=elastic_host)
-      break
-    except:
-      time.sleep(2)
-
-
-
-#date_hour_minute_second_millis
-#{"type": "date", "format": "date_time"},
 def create_es_index():
   global elastic_host
   global elastic_index
@@ -149,33 +114,23 @@ def create_es_index():
         break
       elif response['status'] == 400:
         print('Index already exists.')
-        break;
+        break
     except Exception as e:
       print(f'Index NOT created: {e}. Retrying...')
       time.sleep(2)
 
 
-
-def check_existing(id):
-  global es
-  global elastic_index
-  res = es.exists(index=elastic_index, id=id)
-  return res
-
-
 # timestamp == Ingestion Timestamp
-# ogni "row" è un oggetto json che contiene il numero di immagini retrieved da una sola call all'api rest di flickr
+# ogni "row" è un oggetto json che contiene dettagli di immagini retrieved da una sola call all'api rest di flickr
 def extract_info(row: DataFrame):
   global size
-  global recently_processed_ids
-  global cache_len
   photos = json.loads(row['raw_data'])['photos']['photo']
 
   photos_info = {'photo_id':[], 'owner_id':[], 'title':[], 'public': [], 'url':[],\
                 'width':[], 'height':[]}
 
   for photo in photos:
-    if photo['id'] not in recently_processed_ids and bool(photo['ispublic']) and f'url_{size}' in photo:
+    if bool(photo['ispublic']) and f'url_{size}' in photo:
       photos_info['photo_id'].append(photo['id'])
       photos_info['owner_id'].append(photo['owner'])
       photos_info['title'].append(photo['title'])
@@ -184,11 +139,7 @@ def extract_info(row: DataFrame):
       photos_info['width'].append(photo[f'width_{size}'])
       photos_info['height'].append(photo[f'height_{size}'])
 
-    recently_processed_ids.append(photo['id'])
-
   photos_info['ingestion_timestamp'] = [row['timestamp']]*len(photos_info['photo_id'])
-
-  recently_processed_ids = recently_processed_ids[-cache_len:]
 
   return pd.DataFrame(photos_info)
 
@@ -199,18 +150,10 @@ def all(row: DataFrame):
 
   new_df['photo_id'] = new_df['photo_id'].astype('int64')
 
-  #connect_to_ES()
-
-  #for i, id in new_df['photo_id'].items():
-  #  already_exists = check_existing(id)
-  #  if already_exists:
-  #    new_df = new_df.drop(i)
-
   new_df['downloadable'], new_df['description'] = checkDownloadableAndGetDescr(new_df)
 
   new_df = new_df[new_df['downloadable']]
 
-  #if new_df.size > 0:
   new_df['class'], new_df['confidence'] = classifyAllImages(new_df)
   new_df = new_df[new_df['class'] != 'N/A']
 
@@ -252,8 +195,7 @@ def elaborate_and_save_to_es(df: DataFrame, epoch_id):
 
 flickr = getToken(api_key, api_secret)
 
-#.config("spark.es.nodes.discovery", False)\
-#.config("spark.es.nodes.data.only", False)\
+
 spark = SparkSession\
         .builder\
         .appName('Tap Project')\
@@ -273,8 +215,7 @@ df = spark \
   .option("subscribe", kafka_topic) \
   .load()
 
-#"CAST(timestamp as STRING)"   .withColumn("timestamp", from_unixtime("timestamp"))\
-#  .selectExpr("raw_data", "to_timestamp(timestamp, 'yyyy-MM-dd HH:mm:ss.SSS') as timestamp")\
+
 df.selectExpr("CAST(value AS STRING) as raw_data", "timestamp")\
   .writeStream\
   .option("checkpointLocation", "/var/tmp/checkpoints")\

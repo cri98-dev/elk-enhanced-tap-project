@@ -20,13 +20,27 @@ I also strongly recommend to read the Flickr APIs Terms of Use in order to be aw
   
 # How to query Dataset Creator microservice?
 
-You can use the following url template (Elastichsearch must also be up and running):  
+You can use the following url template:  
 
-http://localhost:8081/getDataset?class=<class-id\>&max=\<max-urls-to-retrieve\>&min_conf=\<min-confidence-score-the-assigned-class-must-have-to-add-url-in-output-list\>
+[http://localhost:8081/getDataset?class=\<class-id\>&max=\<max-urls-to-retrieve\>&min_conf=\<min-confidence-score-the-assigned-class-must-have-to-add-url-in-output-list\>](http://localhost:8081/getDataset?class=\<class-id\>&max=\<max-urls-to-retrieve\>&min_conf=\<min-confidence-score-the-assigned-class-must-have-to-add-url-in-output-list\>)
+
+To get the full list of available class ids visit:
+
+[http://localhost:8081/getClasses](http://localhost:8081/getClasses)<br>
 
 <h4>N.B.</h4>
-- Visit http://localhost:8081/getClasses to get the full list of available class ids.<br>
+
 - Confidence score is a decimal number in [0.0, 1.0].
 
   - Setting it to a negative number would cause images with whatever class confidence score to be included in the output list.  
   - Setting it to a number greater than 1.0 would lead to an empty output list.
+
+- "class" is a mandatory parameter of the url.
+- "max" can be omitted. It defaults to 20.
+- "min_conf" can be omitted. It defaults to 0.6.
+
+# How to access Kibana GUI?
+  
+Simply visit:
+
+http://localhost:5601

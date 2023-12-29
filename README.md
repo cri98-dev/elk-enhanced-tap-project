@@ -4,7 +4,7 @@ This is the project realized for the exam of the subject 'Technologies for Advan
 
 # Architecture
 
-<img src='tap_project_architecture.svg'>
+<img src='cloud_project_architecture.svg'>
 
 # Disclaimer
 

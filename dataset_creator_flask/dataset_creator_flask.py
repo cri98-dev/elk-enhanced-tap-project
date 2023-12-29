@@ -49,6 +49,10 @@ def getDataset(class_to_get, max_no, min_conf):
     return out
 
 
+@app.route("/", methods=['GET'])
+def welcome():
+    return Response("<h3>Welcome to DatasetCreator Microservice!</h3>", status=200)
+
 
 @app.route("/getDataset", methods=['GET'])
 def get_dataset():
